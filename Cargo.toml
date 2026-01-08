@@ -1,0 +1,15 @@
+[package]
+name = "terraform-registry"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "A Rust-based Terraform registry implementation"
+
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+pedantic = "warn"
