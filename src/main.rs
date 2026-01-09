@@ -1,19 +1,25 @@
+mod providers;
 mod routes;
 mod types;
 
+use crate::providers::FakeBackend;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tracing::info;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_target(false)
         .compact()
         .init();
 
+    // Initialize storage backends
+    let providers = Arc::new(FakeBackend);
+
     // Build the application
-    let app = routes::app();
+    let app = routes::app(providers);
 
     // Configure the socket address
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -32,14 +38,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use crate::providers::FakeBackend;
     use crate::routes;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use std::sync::Arc;
     use tower::ServiceExt;
 
     #[tokio::test]
     async fn test_service_discovery_returns_ok() {
-        let app = routes::app();
+        let providers = Arc::new(FakeBackend);
+        let app = routes::app(providers);
 
         let response = app
             .oneshot(
@@ -56,7 +65,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_check_returns_ok() {
-        let app = routes::app();
+        let providers = Arc::new(FakeBackend);
+        let app = routes::app(providers);
 
         let response = app
             .oneshot(
@@ -73,7 +83,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_versions_returns_ok() {
-        let app = routes::app();
+        let providers = Arc::new(FakeBackend);
+        let app = routes::app(providers);
 
         let response = app
             .oneshot(
@@ -90,7 +101,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_endpoint_returns_ok() {
-        let app = routes::app();
+        let providers = Arc::new(FakeBackend);
+        let app = routes::app(providers);
 
         let response = app
             .oneshot(

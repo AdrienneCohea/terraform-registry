@@ -42,6 +42,8 @@ pub struct DownloadResponse {
     pub signing_keys: SigningKeys,
 }
 
+pub type Package = DownloadResponse;
+
 /// GPG signing keys
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SigningKeys {
