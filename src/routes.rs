@@ -1,7 +1,15 @@
-use axum::{Json, Router, extract::Path, http::StatusCode, response::IntoResponse, routing::get};
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::get,
+};
+use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
+use crate::providers::{Backend, FakeBackend};
 use crate::types::*;
 
 /// Service discovery endpoint - returns registry metadata
@@ -17,55 +25,20 @@ async fn service_discovery() -> impl IntoResponse {
 
 /// List available versions for a provider
 async fn list_versions(
+    State(backend): State<Arc<dyn Backend>>,
     Path((namespace, provider_type)): Path<(String, String)>,
 ) -> impl IntoResponse {
     info!("Versions requested for {}/{}", namespace, provider_type);
 
-    // Stub response with example version data
-    let response = VersionsResponse {
-        versions: vec![
-            VersionInfo {
-                version: "1.0.0".to_string(),
-                protocols: vec!["5.0".to_string()],
-                platforms: vec![
-                    Platform {
-                        os: "linux".to_string(),
-                        arch: "amd64".to_string(),
-                    },
-                    Platform {
-                        os: "linux".to_string(),
-                        arch: "arm64".to_string(),
-                    },
-                    Platform {
-                        os: "darwin".to_string(),
-                        arch: "amd64".to_string(),
-                    },
-                    Platform {
-                        os: "darwin".to_string(),
-                        arch: "arm64".to_string(),
-                    },
-                    Platform {
-                        os: "windows".to_string(),
-                        arch: "amd64".to_string(),
-                    },
-                ],
-            },
-            VersionInfo {
-                version: "0.9.0".to_string(),
-                protocols: vec!["5.0".to_string()],
-                platforms: vec![Platform {
-                    os: "linux".to_string(),
-                    arch: "amd64".to_string(),
-                }],
-            },
-        ],
-    };
-
-    Json(response)
+    match backend.list_provider_versions(namespace, provider_type) {
+        Ok(versions) => Json(VersionsResponse { versions }).into_response(),
+        Err(error) => error.into_response(),
+    }
 }
 
 /// Find a provider package for download
 async fn find_provider_package(
+    State(backend): State<Arc<dyn Backend>>,
     Path((namespace, provider_type, version, os, arch)): Path<(
         String,
         String,
@@ -79,35 +52,10 @@ async fn find_provider_package(
         namespace, provider_type, version, os, arch
     );
 
-    // Stub response with example download data
-    let filename = format!("terraform-provider-{provider_type}_{version}_{os}_{arch}.zip");
-
-    let response = DownloadResponse {
-        protocols: vec!["5.0".to_string()],
-        os: os.clone(),
-        arch: arch.clone(),
-        filename: filename.clone(),
-        download_url: format!(
-            "https://releases.example.com/{namespace}/{provider_type}/{filename}"
-        ),
-        shasums_url: format!(
-            "https://releases.example.com/{namespace}/{provider_type}/terraform-provider-{provider_type}_{version}_SHA256SUMS"
-        ),
-        shasums_signature_url: format!(
-            "https://releases.example.com/{namespace}/{provider_type}/terraform-provider-{provider_type}_{version}_SHA256SUMS.sig"
-        ),
-        shasum: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
-        signing_keys: SigningKeys {
-            gpg_public_keys: vec![GpgPublicKey {
-                key_id: "0123456789ABCDEF".to_string(),
-                ascii_armor:
-                    "-----BEGIN PGP PUBLIC KEY BLOCK-----\n...\n-----END PGP PUBLIC KEY BLOCK-----"
-                        .to_string(),
-            }],
-        },
-    };
-
-    Json(response)
+    match backend.find_provider_package(namespace, provider_type, version, os, arch) {
+        Ok(package) => Json(package).into_response(),
+        Err(error) => error.into_response(),
+    }
 }
 
 /// Health check endpoint
@@ -116,17 +64,19 @@ async fn health_check() -> impl IntoResponse {
 }
 
 /// Build the application router with all routes
-pub fn app() -> Router {
+pub fn app(providers: Arc<dyn Backend>) -> Router {
     Router::new()
         .route("/.well-known/terraform.json", get(service_discovery))
         .route(
             "/v1/providers/{namespace}/{type}/versions",
             get(list_versions),
         )
+        .with_state(providers.clone())
         .route(
             "/v1/providers/{namespace}/{type}/{version}/download/{os}/{arch}",
             get(find_provider_package),
         )
         .route("/health", get(health_check))
+        .with_state(providers.clone())
         .layer(TraceLayer::new_for_http())
 }
