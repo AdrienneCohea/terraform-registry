@@ -39,3 +39,15 @@ impl IntoResponse for Error {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::response::IntoResponse;
+    use crate::providers::Error;
+
+    #[test]
+    fn into_response_for_error() {
+        assert_eq!(axum::http::StatusCode::NOT_FOUND, Error::NotFound.into_response().status());
+        assert_eq!(axum::http::StatusCode::INTERNAL_SERVER_ERROR, Error::StorageError.into_response().status());
+    }
+}

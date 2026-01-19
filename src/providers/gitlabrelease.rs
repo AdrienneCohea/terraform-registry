@@ -66,6 +66,7 @@ impl GitLabBackend {
     }
 }
 
+#[derive(Debug)]
 #[allow(dead_code)]
 pub enum TryFromGitLabError {
     InvalidVersion(String, String),
@@ -135,6 +136,7 @@ impl TryFrom<&GitLabRelease> for VersionInfo {
     }
 }
 
+#[derive(Debug)]
 #[allow(dead_code)]
 pub enum TryFromLinkForPlatformError {
     NotZipFile,
@@ -217,4 +219,236 @@ pub struct Link {
     pub url: String,
     #[serde(rename = "direct_asset_url")]
     pub direct_asset_url: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_link(name: &str) -> Link {
+        Link {
+            name: name.to_string(),
+            url: format!("https://example.com/{name}"),
+            direct_asset_url: format!("https://example.com/direct/{name}"),
+        }
+    }
+
+    fn make_release(tag_name: &str, link_names: Vec<&str>) -> GitLabRelease {
+        GitLabRelease {
+            tag_name: tag_name.to_string(),
+            assets: Assets {
+                links: link_names.into_iter().map(make_link).collect(),
+            },
+        }
+    }
+
+    #[test]
+    fn try_from_valid_release_with_platforms() {
+        let release = make_release(
+            "v1.2.3",
+            vec![
+                "terraform-provider-example_SHA256SUMS",
+                "terraform-provider-example_SHA256SUMS.sig",
+                "terraform-provider-example_linux_amd64.zip",
+                "terraform-provider-example_darwin_arm64.zip",
+            ],
+        );
+
+        let result = VersionInfo::try_from(&release);
+        assert!(result.is_ok());
+
+        let version_info = result.unwrap();
+        assert_eq!(version_info.version, "1.2.3");
+        assert_eq!(version_info.protocols, vec!["5.0".to_string()]);
+        assert_eq!(version_info.platforms.len(), 2);
+        assert!(version_info
+            .platforms
+            .iter()
+            .any(|p| p.os == "linux" && p.arch == "amd64"));
+        assert!(version_info
+            .platforms
+            .iter()
+            .any(|p| p.os == "darwin" && p.arch == "arm64"));
+    }
+
+    #[test]
+    fn try_from_valid_release_with_prerelease_version() {
+        let release = make_release(
+            "v2.0.0-beta.1",
+            vec![
+                "provider_SHA256SUMS",
+                "provider_SHA256SUMS.sig",
+                "provider_linux_386.zip",
+            ],
+        );
+
+        let result = VersionInfo::try_from(&release);
+        assert!(result.is_ok());
+
+        let version_info = result.unwrap();
+        assert_eq!(version_info.version, "2.0.0-beta.1");
+    }
+
+    #[test]
+    fn try_from_tag_missing_v_prefix() {
+        let release = make_release(
+            "1.0.0",
+            vec!["provider_SHA256SUMS", "provider_SHA256SUMS.sig"],
+        );
+
+        let result = VersionInfo::try_from(&release);
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            TryFromGitLabError::InvalidVersion(tag, msg) => {
+                assert_eq!(tag, "1.0.0");
+                assert!(msg.contains("v{semver}"));
+            }
+            _ => panic!("expected InvalidVersion error"),
+        }
+    }
+
+    #[test]
+    fn try_from_tag_invalid_semver() {
+        let release = make_release(
+            "vnotaversion",
+            vec!["provider_SHA256SUMS", "provider_SHA256SUMS.sig"],
+        );
+
+        let result = VersionInfo::try_from(&release);
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            TryFromGitLabError::InvalidVersion(tag, msg) => {
+                assert_eq!(tag, "vnotaversion");
+                assert!(msg.contains("semantic version"));
+            }
+            _ => panic!("expected InvalidVersion error"),
+        }
+    }
+
+    #[test]
+    fn try_from_missing_shasums_sig() {
+        let release = make_release(
+            "v1.0.0",
+            vec![
+                "provider_SHA256SUMS",
+                "provider_linux_amd64.zip",
+            ],
+        );
+
+        let result = VersionInfo::try_from(&release);
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            TryFromGitLabError::MissingSignatureLink => {}
+            _ => panic!("expected MissingSignatureLink error"),
+        }
+    }
+
+    #[test]
+    fn try_from_missing_shasums() {
+        let release = make_release(
+            "v1.0.0",
+            vec![
+                "provider_SHA256SUMS.sig",
+                "provider_linux_amd64.zip",
+            ],
+        );
+
+        let result = VersionInfo::try_from(&release);
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            TryFromGitLabError::MissingShaSumsLink => {}
+            _ => panic!("expected MissingShaSumsLink error"),
+        }
+    }
+
+    #[test]
+    fn try_from_no_zip_files_returns_empty_platforms() {
+        let release = make_release(
+            "v1.0.0",
+            vec!["provider_SHA256SUMS", "provider_SHA256SUMS.sig"],
+        );
+
+        let result = VersionInfo::try_from(&release);
+        assert!(result.is_ok());
+
+        let version_info = result.unwrap();
+        assert_eq!(version_info.version, "1.0.0");
+        assert!(version_info.platforms.is_empty());
+    }
+
+    #[test]
+    fn try_from_filters_out_invalid_platform_zip_files() {
+        let release = make_release(
+            "v1.0.0",
+            vec![
+                "provider_SHA256SUMS",
+                "provider_SHA256SUMS.sig",
+                "provider_linux_amd64.zip",
+                "provider_unsupportedos_amd64.zip",
+                "provider_linux_unsupportedarch.zip",
+                "invalid_format.zip",
+            ],
+        );
+
+        let result = VersionInfo::try_from(&release);
+        assert!(result.is_ok());
+
+        let version_info = result.unwrap();
+        assert_eq!(version_info.platforms.len(), 1);
+        assert_eq!(version_info.platforms[0].os, "linux");
+        assert_eq!(version_info.platforms[0].arch, "amd64");
+    }
+
+    #[test]
+    fn try_from_all_supported_os_and_arch() {
+        let release = make_release(
+            "v1.0.0",
+            vec![
+                "provider_SHA256SUMS",
+                "provider_SHA256SUMS.sig",
+                "provider_linux_amd64.zip",
+                "provider_linux_arm64.zip",
+                "provider_linux_arm.zip",
+                "provider_linux_386.zip",
+                "provider_darwin_amd64.zip",
+                "provider_darwin_arm64.zip",
+                "provider_windows_amd64.zip",
+                "provider_freebsd_amd64.zip",
+                "provider_openbsd_amd64.zip",
+                "provider_solaris_amd64.zip",
+            ],
+        );
+
+        let result = VersionInfo::try_from(&release);
+        assert!(result.is_ok());
+
+        let version_info = result.unwrap();
+        assert_eq!(version_info.platforms.len(), 10);
+    }
+
+    #[test]
+    fn try_from_ignores_non_zip_asset_files() {
+        let release = make_release(
+            "v1.0.0",
+            vec![
+                "provider_SHA256SUMS",
+                "provider_SHA256SUMS.sig",
+                "provider_linux_amd64.zip",
+                "provider_linux_arm64.tar.gz",
+                "README.md",
+            ],
+        );
+
+        let result = VersionInfo::try_from(&release);
+        assert!(result.is_ok());
+
+        let version_info = result.unwrap();
+        assert_eq!(version_info.platforms.len(), 1);
+        assert_eq!(version_info.platforms[0].os, "linux");
+        assert_eq!(version_info.platforms[0].arch, "amd64");
+    }
 }
