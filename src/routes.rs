@@ -9,8 +9,8 @@ use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use crate::providers::{Backend, FakeBackend};
-use crate::types::*;
+use crate::providers::Backend;
+use crate::types::{ServiceDiscovery, VersionsResponse};
 
 /// Service discovery endpoint - returns registry metadata
 async fn service_discovery() -> impl IntoResponse {
@@ -64,6 +64,7 @@ async fn health_check() -> impl IntoResponse {
 }
 
 /// Build the application router with all routes
+#[allow(clippy::needless_pass_by_value)]
 pub fn app(providers: Arc<dyn Backend>) -> Router {
     Router::new()
         .route("/.well-known/terraform.json", get(service_discovery))
