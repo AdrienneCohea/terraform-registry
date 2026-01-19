@@ -2,7 +2,8 @@ use crate::types::{Package, Platform, VersionInfo};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use super::{Backend, Error, Result};
+use super::{Backend, ProviderBackendError, Result};
+use crate::providers::ProviderBackendError::StorageError;
 use crate::providers::gitlabrelease::TryFromLinkForPlatformError::{
     InvalidFileNameFormat, UnsupportedArch, UnsupportedOS,
 };
@@ -31,12 +32,12 @@ impl Backend for GitLabBackend {
                     .iter()
                     .filter_map(|rel| VersionInfo::try_from(rel).ok())
                     .collect()),
-                Err(Error::NotFound) => Err(Error::NotFound),
-                Err(Error::StorageError) => Err(Error::StorageError),
+                Err(ProviderBackendError::NotFound) => Err(ProviderBackendError::NotFound),
+                Err(ProviderBackendError::StorageError) => Err(ProviderBackendError::StorageError),
             };
         }
 
-        Err(Error::StorageError)
+        Err(ProviderBackendError::StorageError)
     }
 
     fn find_provider_package(
@@ -52,15 +53,24 @@ impl Backend for GitLabBackend {
 }
 
 impl GitLabBackend {
+    pub fn new(cfg: crate::config::GitLabConfig) -> Result<Self> {
+        let client = Gitlab::new(cfg.host, cfg.token).map_err(|_| StorageError)?;
+
+        Ok(Self {
+            client: Arc::new(client),
+            project: cfg.project,
+        })
+    }
+
     fn list_project_releases(&self, project: &str) -> Result<Vec<GitLabRelease>> {
         let endpoint = ProjectReleases::builder()
             .project(urlencoding::encode(project).to_string())
             .build()
-            .map_err(|_| Error::StorageError)?;
+            .map_err(|_| ProviderBackendError::StorageError)?;
 
         let releases: Vec<GitLabRelease> = endpoint
             .query(&*self.client)
-            .map_err(|_| Error::StorageError)?;
+            .map_err(|_| ProviderBackendError::StorageError)?;
 
         Ok(releases)
     }
@@ -261,14 +271,18 @@ mod tests {
         assert_eq!(version_info.version, "1.2.3");
         assert_eq!(version_info.protocols, vec!["5.0".to_string()]);
         assert_eq!(version_info.platforms.len(), 2);
-        assert!(version_info
-            .platforms
-            .iter()
-            .any(|p| p.os == "linux" && p.arch == "amd64"));
-        assert!(version_info
-            .platforms
-            .iter()
-            .any(|p| p.os == "darwin" && p.arch == "arm64"));
+        assert!(
+            version_info
+                .platforms
+                .iter()
+                .any(|p| p.os == "linux" && p.arch == "amd64")
+        );
+        assert!(
+            version_info
+                .platforms
+                .iter()
+                .any(|p| p.os == "darwin" && p.arch == "arm64")
+        );
     }
 
     #[test]
@@ -331,10 +345,7 @@ mod tests {
     fn try_from_missing_shasums_sig() {
         let release = make_release(
             "v1.0.0",
-            vec![
-                "provider_SHA256SUMS",
-                "provider_linux_amd64.zip",
-            ],
+            vec!["provider_SHA256SUMS", "provider_linux_amd64.zip"],
         );
 
         let result = VersionInfo::try_from(&release);
@@ -350,10 +361,7 @@ mod tests {
     fn try_from_missing_shasums() {
         let release = make_release(
             "v1.0.0",
-            vec![
-                "provider_SHA256SUMS.sig",
-                "provider_linux_amd64.zip",
-            ],
+            vec!["provider_SHA256SUMS.sig", "provider_linux_amd64.zip"],
         );
 
         let result = VersionInfo::try_from(&release);
