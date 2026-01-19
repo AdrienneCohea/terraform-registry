@@ -2,6 +2,7 @@ mod fake;
 mod gitlabrelease;
 
 pub use fake::FakeBackend;
+pub use gitlabrelease::GitLabBackend;
 
 use crate::types::{Package, VersionInfo};
 use axum::response::{IntoResponse, Response};
@@ -23,15 +24,20 @@ pub trait Backend: Send + Sync {
     ) -> Result<Package>;
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, ProviderBackendError>;
+
+use thiserror::Error;
 
 #[allow(dead_code)]
-pub enum Error {
+#[derive(Error, Debug)]
+pub enum ProviderBackendError {
+    #[error("not found")]
     NotFound,
+    #[error("storage error")]
     StorageError,
 }
 
-impl IntoResponse for Error {
+impl IntoResponse for ProviderBackendError {
     fn into_response(self) -> Response {
         match self {
             Self::NotFound => axum::http::StatusCode::NOT_FOUND.into_response(),
@@ -42,12 +48,18 @@ impl IntoResponse for Error {
 
 #[cfg(test)]
 mod tests {
+    use crate::providers::ProviderBackendError;
     use axum::response::IntoResponse;
-    use crate::providers::Error;
 
     #[test]
     fn into_response_for_error() {
-        assert_eq!(axum::http::StatusCode::NOT_FOUND, Error::NotFound.into_response().status());
-        assert_eq!(axum::http::StatusCode::INTERNAL_SERVER_ERROR, Error::StorageError.into_response().status());
+        assert_eq!(
+            axum::http::StatusCode::NOT_FOUND,
+            ProviderBackendError::NotFound.into_response().status()
+        );
+        assert_eq!(
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ProviderBackendError::StorageError.into_response().status()
+        );
     }
 }

@@ -1,10 +1,8 @@
+mod config;
 mod providers;
 mod routes;
 mod types;
 
-use crate::providers::FakeBackend;
-use std::net::SocketAddr;
-use std::sync::Arc;
 use tracing::info;
 
 #[tokio::main]
@@ -15,22 +13,13 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .init();
 
-    // Initialize storage backends
-    let providers = Arc::new(FakeBackend);
+    let config = config::AppConfig::load("config.yaml")?;
+    let providers = config.providers_backend()?;
+    let listener = tokio::net::TcpListener::bind(config.bind_address).await?;
 
     // Build the application
     let app = routes::app(providers);
-
-    // Configure the socket address
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    info!("Starting Terraform registry server on {}", addr);
-
-    // Create the TCP listener
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-
-    info!("Server listening on http://{}", addr);
-
-    // Start serving
+    info!("Server listening on {}", config.bind_address);
     axum::serve(listener, app).await?;
 
     Ok(())
