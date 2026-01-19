@@ -12,8 +12,9 @@ pub struct AppConfig {
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Clone, Debug)]
+#[serde(rename_all = "snake_case")]
 pub enum ProvidersBackend {
-    Fake,
+    Fake {},
     GitLabRelease(GitLabConfig),
 }
 
@@ -34,7 +35,7 @@ impl AppConfig {
 
     pub fn providers_backend(&self) -> ProviderResult<Arc<dyn Backend>> {
         match &self.providers_backend {
-            ProvidersBackend::Fake => Ok(Arc::new(FakeBackend)),
+            ProvidersBackend::Fake {} => Ok(Arc::new(FakeBackend)),
             ProvidersBackend::GitLabRelease(cfg) => Ok(Arc::new(GitLabBackend::new(cfg.clone())?)),
         }
     }
@@ -47,11 +48,13 @@ mod tests {
 
     #[test]
     fn test_config() {
-        let yaml = "bind_address: '127.0.0.1:8000'\nproviders_backend: Fake\n";
+        let yaml = "\
+bind_address: '127.0.0.1:8000'
+providers_backend: !fake {}";
 
         let config: AppConfig = yaml::from_str(yaml).unwrap();
 
         assert_eq!(config.bind_address, SocketAddr::from(([127, 0, 0, 1], 8000)));
-        assert_eq!(config.providers_backend, ProvidersBackend::Fake);
+        assert_eq!(config.providers_backend, ProvidersBackend::Fake {});
     }
 }
