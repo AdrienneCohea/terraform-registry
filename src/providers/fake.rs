@@ -1,38 +1,6 @@
-use crate::types::*;
-use axum::response::{IntoResponse, Response};
+use crate::types::{GpgPublicKey, Package, Platform, SigningKeys, VersionInfo};
 
-pub trait Backend: Send + Sync {
-    fn list_provider_versions(
-        &self,
-        namespace: String,
-        provider_type: String,
-    ) -> Result<Vec<VersionInfo>>;
-
-    fn find_provider_package(
-        &self,
-        namespace: String,
-        provider_type: String,
-        version: String,
-        os: String,
-        arch: String,
-    ) -> Result<Package>;
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
-pub enum Error {
-    NotFound,
-    StorageError,
-}
-
-impl IntoResponse for Error {
-    fn into_response(self) -> Response {
-        match self {
-            Self::NotFound => axum::http::StatusCode::NOT_FOUND.into_response(),
-            Self::StorageError => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        }
-    }
-}
+use super::{Backend, Result};
 
 #[derive(Clone)]
 pub struct FakeBackend;

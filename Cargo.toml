@@ -14,6 +14,10 @@ tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0.100"
+gitlab = "0.1807.0"
+serde_derive = "1.0.228"
+urlencoding = "2.1.3"
+semver = "1.0.27"
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -22,4 +26,4 @@ unsafe_code = "forbid"
 expect_used = "deny"
 unwrap_used = "deny"
 all = "deny"
-pedantic = "warn"
+pedantic = { level = "warn", priority = -1 }
