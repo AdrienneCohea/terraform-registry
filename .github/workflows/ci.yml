@@ -48,4 +48,9 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage report
-        run: cargo llvm-cov --json
+        run: cargo llvm-cov --cobertura --output-path coverage.cobertura.xml
+
+      - name: Code Coverage Summary Report
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: coverage.cobertura.xml
